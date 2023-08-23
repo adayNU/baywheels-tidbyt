@@ -1,10 +1,11 @@
 load("render.star", "render")
 load("http.star", "http")
 load("encoding/base64.star", "base64")
+load("schema.star", "schema")
 
 STATIONS_URL = "https://gbfs.lyft.com/gbfs/1.1/bay/en/station_information.json"
 STATION_STATUS_URL = "https://gbfs.lyft.com/gbfs/1.1/bay/en/station_status.json"
-MY_STATION_ID = "bf116a73-3718-46c1-ac14-c295963150ae"
+DEFAULT_STATION_ID = "bf116a73-3718-46c1-ac14-c295963150ae"
 BW_ICON = base64.decode("""
 iVBORw0KGgoAAAANSUhEUgAAADIAAAAiCAYAAAAd6YoqAAAAAXNSR0IArs4c6QAAA4RJREFUWEf
 tmEtoE1EUhv8zqW3TSaqgmRQEX1ARFEHt1kWhYgURsStRKIjoQhExY3WjC3etE1BRsIjgQhFEty
@@ -26,17 +27,17 @@ bLikCAWVZwzEYj5UN3jymmAcJYuFAskdirUd9chKtwFsKfD+gyrQlPipdpccVREG/gEqbUdcVOb
 8sQAAAABJRU5ErkJggg==
 """)
 
-def main():
-  rep = http.get(STATION_STATUS_URL, ttl_seconds = 60)
-  if rep.status_code != 200:
-      fail("Coindesk request failed with status %d", rep.status_code)
+def main(config):
+  resp = http.get(STATION_STATUS_URL, ttl_seconds = 60)
+  if resp.status_code != 200:
+      fail("gbfs status request failed with status %d", resp.status_code)
 
-  station_data = rep.json()["data"]["stations"]
+  station_data = resp.json()["data"]["stations"]
 
   text = ""
 
   for index, value in enumerate(station_data):
-    if value["station_id"] == MY_STATION_ID:
+    if value["station_id"] == config.get("station_id", DEFAULT_STATION_ID):
         text = "Bikes: " + str(int(value["num_bikes_available"]-value["num_ebikes_available"])) + "\nE-Bikes: " + str(int(value["num_ebikes_available"]))
         break
 
@@ -52,4 +53,31 @@ def main():
         ],
       )
     )
+  )
+
+def toOption(station):
+    return schema.Option(
+      display = station["name"],
+      value = station["station_id"]
+    )
+
+def get_schema():
+  resp = http.get(STATIONS_URL, ttl_seconds = 60 * 60 * 24)
+  if resp.status_code != 200:
+    fail("gbfs station request failed with status %d", resp.status_code)
+
+  options = [toOption(x) for x in resp.json()["data"]["stations"]]
+
+  return schema.Schema(
+      version = "1",
+      fields = [
+          schema.Dropdown(
+              id = "station_id",
+              name = "Station",
+              desc = "Which station's data to show",
+              icon = "bicycle",
+              default = options[0].value,
+              options = options,
+          ),
+      ],
   )
